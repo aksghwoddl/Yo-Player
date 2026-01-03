@@ -1,0 +1,15 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:17:1-19:12
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:17:1-19:12
+	package
+		ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:17:11-44
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml
+uses-sdk
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:18:3-14
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:18:3-14
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml:18:3-14
+	android:targetSdkVersion
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/decoder/src/main/AndroidManifest.xml

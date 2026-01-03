@@ -1,0 +1,25 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:17:1-22:12
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:17:1-22:12
+	package
+		ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:18:5-40
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:17:11-69
+uses-permission#android.permission.ACCESS_NETWORK_STATE
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:19:3-76
+	android:name
+		ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:19:20-74
+uses-permission#android.permission.WAKE_LOCK
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:20:3-65
+	android:name
+		ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:20:20-63
+uses-sdk
+ADDED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:21:3-15
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:21:3-15
+INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml:21:3-15
+	android:targetSdkVersion
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/yohan/AndroidStudioProjects/media/libraries/exoplayer/src/main/AndroidManifest.xml
