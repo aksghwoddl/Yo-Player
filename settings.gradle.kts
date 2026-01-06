@@ -50,5 +50,9 @@ project(":lib-extractor").projectDir = file("libraries/extractor")
 include(":lib-exoplayer")
 project(":lib-exoplayer").projectDir = file("libraries/exoplayer")
 
+// YoPlayer SDK - Custom module (Kotlin)
+include(":yoplayersdk")
+project(":yoplayersdk").projectDir = file("yoplayersdk")
+
 include(":app")
  
