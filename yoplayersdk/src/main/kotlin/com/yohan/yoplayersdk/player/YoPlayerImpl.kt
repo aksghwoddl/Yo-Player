@@ -14,7 +14,7 @@ import com.yohan.yoplayersdk.m3u8.M3u8Segment
  * @param m3u8Downloader M3U8 다운로더
  * @param tsDemuxer TS 디먹서
  */
-class YoPlayerImpl(
+internal class YoPlayerImpl(
     private val m3u8Downloader: M3u8Downloader,
     private val tsDemuxer: TsDemuxer
 ) : YoPlayer {
