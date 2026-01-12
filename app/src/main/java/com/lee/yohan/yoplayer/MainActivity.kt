@@ -16,13 +16,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,7 +50,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    M3u8DownloaderTestScreen(
+                    YoPlayerTestScreen(
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -62,25 +60,25 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun M3u8DownloaderTestScreen(
+fun YoPlayerTestScreen(
     modifier: Modifier = Modifier,
     viewModel: MainViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    M3u8DownloaderContent(
+    YoPlayerContent(
         uiState = uiState,
-        onStartDownload = viewModel::startDownload,
-        onCancelDownload = viewModel::cancelDownload,
+        onPlay = viewModel::play,
+        onStop = viewModel::stop,
         modifier = modifier
     )
 }
 
 @Composable
-private fun M3u8DownloaderContent(
+private fun YoPlayerContent(
     uiState: M3u8DownloadUiState,
-    onStartDownload: () -> Unit,
-    onCancelDownload: () -> Unit,
+    onPlay: () -> Unit,
+    onStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -91,7 +89,7 @@ private fun M3u8DownloaderContent(
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         Text(
-            text = "M3U8 Downloader Test",
+            text = "YoPlayer Test",
             style = MaterialTheme.typography.headlineMedium
         )
 
@@ -100,30 +98,17 @@ private fun M3u8DownloaderContent(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
-                onClick = onStartDownload,
+                onClick = onPlay,
                 enabled = !uiState.isDownloading
             ) {
-                Text(if (uiState.isDownloading) "Downloading..." else "Start Download")
+                Text(if (uiState.isDownloading) "Playing..." else "Play")
             }
 
-            if (uiState.isDownloading) {
-                OutlinedButton(onClick = onCancelDownload) {
-                    Text("Cancel")
-                }
-            }
-        }
-
-        // Progress
-        if (uiState.isDownloading || uiState.progress > 0f) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                LinearProgressIndicator(
-                    progress = { uiState.progress },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    text = "${(uiState.progress * 100).toInt()}% (${uiState.downloadedSegments}/${uiState.totalSegments} segments)",
-                    style = MaterialTheme.typography.bodyMedium
-                )
+            OutlinedButton(
+                onClick = onStop,
+                enabled = uiState.isDownloading
+            ) {
+                Text("Stop")
             }
         }
 
@@ -164,85 +149,51 @@ private fun M3u8DownloaderContent(
 
 @Preview(showBackground = true, name = "Ready State")
 @Composable
-private fun M3u8DownloaderContentPreview_Ready() {
+private fun YoPlayerContentPreview_Ready() {
     YoPlayerTheme {
-        M3u8DownloaderContent(
+        YoPlayerContent(
             uiState = M3u8DownloadUiState(),
-            onStartDownload = {},
-            onCancelDownload = {}
+            onPlay = {},
+            onStop = {}
         )
     }
 }
 
-@Preview(showBackground = true, name = "Downloading State")
+@Preview(showBackground = true, name = "Playing State")
 @Composable
-private fun M3u8DownloaderContentPreview_Downloading() {
+private fun YoPlayerContentPreview_Playing() {
     YoPlayerTheme {
-        M3u8DownloaderContent(
+        YoPlayerContent(
             uiState = M3u8DownloadUiState(
                 isDownloading = true,
-                progress = 0.45f,
-                downloadedSegments = 5,
-                totalSegments = 11,
-                statusMessage = "Downloading...",
+                statusMessage = "Starting playback...",
                 logs = listOf(
-                    "Download started",
-                    "Playlist: 11 segments, 60.0s",
-                    "Segment 1/11: 245.3KB, header=[47 40 11 10]",
-                    "Segment 2/11: 312.1KB, header=[47 40 11 10]",
-                    "Segment 3/11: 298.5KB, header=[47 40 11 10]"
+                    "=== Starting YoPlayer ===",
+                    "URL: https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"
                 )
             ),
-            onStartDownload = {},
-            onCancelDownload = {}
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Completed State")
-@Composable
-private fun M3u8DownloaderContentPreview_Completed() {
-    YoPlayerTheme {
-        M3u8DownloaderContent(
-            uiState = M3u8DownloadUiState(
-                isDownloading = false,
-                progress = 1f,
-                downloadedSegments = 11,
-                totalSegments = 11,
-                statusMessage = "Completed! 2.45 MB in 3.2s",
-                isCompleted = true,
-                logs = listOf(
-                    "=== Download Complete ===",
-                    "Total: 11 segments, 2.45 MB",
-                    "Time: 3.2s"
-                )
-            ),
-            onStartDownload = {},
-            onCancelDownload = {}
+            onPlay = {},
+            onStop = {}
         )
     }
 }
 
 @Preview(showBackground = true, name = "Error State")
 @Composable
-private fun M3u8DownloaderContentPreview_Error() {
+private fun YoPlayerContentPreview_Error() {
     YoPlayerTheme {
-        M3u8DownloaderContent(
+        YoPlayerContent(
             uiState = M3u8DownloadUiState(
                 isDownloading = false,
-                progress = 0.3f,
-                downloadedSegments = 3,
-                totalSegments = 11,
                 statusMessage = "Error: Connection timeout",
                 isError = true,
                 logs = listOf(
-                    "Download started",
-                    "Segment 1/11: 245.3KB",
+                    "=== Starting YoPlayer ===",
                     "Error: Connection timeout"
                 )
             ),
-            onStartDownload = {},
-            onCancelDownload = {}
+            onPlay = {},
+            onStop = {}
         )
     }
 }

@@ -60,7 +60,6 @@ class M3u8Downloader(
      *
      * @param m3u8Url M3U8 플레이리스트 URL
      * @param listener 다운로드 진행 리스너
-     * @param variantSelector 마스터 플레이리스트인 경우 variant 선택 함수 (기본: 가장 높은 bandwidth)
      */
     fun download(
         m3u8Url: String,
