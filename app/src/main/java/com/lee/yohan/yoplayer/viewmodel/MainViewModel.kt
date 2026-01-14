@@ -1,6 +1,7 @@
 package com.lee.yohan.yoplayer.viewmodel
 
 import android.util.Log
+import android.view.Surface
 import androidx.lifecycle.ViewModel
 import com.yohan.yoplayersdk.player.YoPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,6 +37,10 @@ class MainViewModel @Inject constructor(
     private fun addLog(message: String) {
         Log.d(TAG, message)
         _uiState.update { it.copy(logs = it.logs + message) }
+    }
+
+    fun setSurface(surface: Surface?) {
+        yoPlayer.setSurface(surface)
     }
 
     fun play() {

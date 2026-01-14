@@ -54,6 +54,12 @@ dependencies {
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
 
+    // ExoPlayer (프로젝트 내부 모듈)
+    implementation(project(":lib-exoplayer"))
+    implementation(project(":lib-common"))
+    implementation(project(":lib-decoder"))
+    implementation(project(":lib-extractor"))
+
     // Testing
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

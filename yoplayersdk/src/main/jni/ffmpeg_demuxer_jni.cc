@@ -34,6 +34,145 @@ static const int DEMUXER_ERROR_OPEN_FAILED = -2;
 static const int DEMUXER_ERROR_NO_STREAMS = -3;
 static const int DEMUXER_ERROR_READ_FAILED = -4;
 
+// H.264 NAL 유닛 타입
+static const int NAL_TYPE_SPS = 7;
+static const int NAL_TYPE_PPS = 8;
+static const int NAL_TYPE_IDR = 5;
+static const int H264_START_CODE_SIZE = 4;
+
+// AAC 관련 상수
+static const int AAC_ASC_SIZE = 2;
+
+/**
+ * H.264 SPS에서 width/height 파싱 (간단한 구현)
+ * 실제로는 더 복잡한 파싱이 필요하지만, 기본적인 케이스 처리
+ */
+static bool parse_sps_dimensions(const uint8_t* sps, int sps_size, int* width, int* height) {
+    if (sps_size < 8) return false;
+
+    // SPS 파싱은 복잡하므로, 여기서는 간단히 로그만 출력
+    LOGI("SPS found: size=%d bytes", sps_size);
+
+    // TODO: 실제 SPS 파싱 구현 필요
+    // 현재는 기본값 사용
+    return false;
+}
+
+/**
+ * H.264 비트스트림에서 SPS/PPS NAL 유닛 찾기
+ */
+static bool find_h264_sps_pps(const uint8_t* data, int size,
+                               const uint8_t** sps_out, int* sps_size,
+                               const uint8_t** pps_out, int* pps_size) {
+    *sps_out = nullptr;
+    *pps_out = nullptr;
+    *sps_size = 0;
+    *pps_size = 0;
+
+    int i = 0;
+    while (i < size - 4) {
+        // Start code 찾기 (0x00000001 또는 0x000001)
+        if (data[i] == 0 && data[i+1] == 0) {
+            int start_code_len = 0;
+            if (data[i+2] == 1) {
+                start_code_len = 3;
+            } else if (data[i+2] == 0 && data[i+3] == 1) {
+                start_code_len = 4;
+            }
+
+            if (start_code_len > 0) {
+                int nal_start = i + start_code_len;
+                if (nal_start < size) {
+                    int nal_type = data[nal_start] & 0x1F;
+
+                    // 다음 start code 찾기
+                    int nal_end = size;
+                    for (int j = nal_start + 1; j < size - 3; j++) {
+                        if (data[j] == 0 && data[j+1] == 0 &&
+                            (data[j+2] == 1 || (data[j+2] == 0 && data[j+3] == 1))) {
+                            nal_end = j;
+                            break;
+                        }
+                    }
+
+                    int nal_size = nal_end - nal_start;
+
+                    if (nal_type == NAL_TYPE_SPS && *sps_out == nullptr) {
+                        *sps_out = data + nal_start;
+                        *sps_size = nal_size;
+                        LOGI("Found SPS at offset %d, size %d", nal_start, nal_size);
+                    } else if (nal_type == NAL_TYPE_PPS && *pps_out == nullptr) {
+                        *pps_out = data + nal_start;
+                        *pps_size = nal_size;
+                        LOGI("Found PPS at offset %d, size %d", nal_start, nal_size);
+                    }
+
+                    if (*sps_out != nullptr && *pps_out != nullptr) {
+                        return true;
+                    }
+
+                    i = nal_end;
+                    continue;
+                }
+            }
+        }
+        i++;
+    }
+
+    return (*sps_out != nullptr);
+}
+
+static uint8_t* build_h264_extradata(const uint8_t* sps, int sps_size,
+                                     const uint8_t* pps, int pps_size,
+                                     int* out_size) {
+    if (!sps || !pps || sps_size <= 0 || pps_size <= 0) {
+        return nullptr;
+    }
+    const int total_size = H264_START_CODE_SIZE + sps_size + H264_START_CODE_SIZE + pps_size;
+    uint8_t* extradata = (uint8_t*)av_malloc(total_size);
+    if (!extradata) {
+        return nullptr;
+    }
+    int offset = 0;
+    extradata[offset++] = 0;
+    extradata[offset++] = 0;
+    extradata[offset++] = 0;
+    extradata[offset++] = 1;
+    memcpy(extradata + offset, sps, sps_size);
+    offset += sps_size;
+    extradata[offset++] = 0;
+    extradata[offset++] = 0;
+    extradata[offset++] = 0;
+    extradata[offset++] = 1;
+    memcpy(extradata + offset, pps, pps_size);
+    *out_size = total_size;
+    return extradata;
+}
+
+static bool build_aac_extradata_from_adts(const uint8_t* data, int size,
+                                          uint8_t** out_data, int* out_size) {
+    if (!data || size < 7) {
+        return false;
+    }
+    if (!(data[0] == 0xFF && (data[1] & 0xF0) == 0xF0)) {
+        return false;
+    }
+    int profile = (data[2] >> 6) & 0x03;
+    int sample_rate_index = (data[2] >> 2) & 0x0F;
+    int channel_config = ((data[2] & 0x01) << 2) | ((data[3] >> 6) & 0x03);
+    int audio_object_type = profile + 1;
+
+    uint8_t* extradata = (uint8_t*)av_malloc(AAC_ASC_SIZE);
+    if (!extradata) {
+        return false;
+    }
+    extradata[0] = (uint8_t)(((audio_object_type << 3) & 0xF8) | ((sample_rate_index >> 1) & 0x07));
+    extradata[1] = (uint8_t)(((sample_rate_index << 7) & 0x80) | ((channel_config << 3) & 0x78));
+    *out_data = extradata;
+    *out_size = AAC_ASC_SIZE;
+    return true;
+}
+
 // 메모리 버퍼에서 읽기 위한 구조체
 struct BufferData {
     const uint8_t* ptr;
@@ -243,6 +382,10 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
     ctx->fmt_ctx->pb = ctx->avio_ctx;
     ctx->fmt_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
 
+    // TS 스트림 분석을 위한 옵션 설정
+    ctx->fmt_ctx->probesize = 5000000;  // 5MB까지 분석
+    ctx->fmt_ctx->max_analyze_duration = 5000000;  // 5초까지 분석
+
     // 입력 포맷 열기 (MPEG-TS 자동 감지)
     int ret = avformat_open_input(&ctx->fmt_ctx, nullptr, nullptr, nullptr);
     if (ret < 0) {
@@ -255,6 +398,9 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
 
     // 스트림 정보 찾기
     ret = avformat_find_stream_info(ctx->fmt_ctx, nullptr);
+
+    LOGI("probeSegment: probesize=%lld, analyzeduration=%lld",
+         ctx->fmt_ctx->probesize, ctx->fmt_ctx->max_analyze_duration);
     if (ret < 0) {
         log_error("avformat_find_stream_info", ret);
         avformat_close_input(&ctx->fmt_ctx);
@@ -278,6 +424,60 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
 
     LOGI("Found %d tracks (video_idx=%d, audio_idx=%d)",
          track_count, ctx->video_stream_idx, ctx->audio_stream_idx);
+
+    uint8_t* video_extradata = nullptr;
+    int video_extradata_size = 0;
+    uint8_t* audio_extradata = nullptr;
+    int audio_extradata_size = 0;
+
+    bool need_video_extradata = false;
+    bool need_audio_extradata = false;
+
+    if (ctx->video_stream_idx >= 0) {
+        AVCodecParameters* codecpar = ctx->fmt_ctx->streams[ctx->video_stream_idx]->codecpar;
+        need_video_extradata =
+            codecpar->codec_id == AV_CODEC_ID_H264 &&
+            (codecpar->extradata == nullptr || codecpar->extradata_size == 0);
+    }
+    if (ctx->audio_stream_idx >= 0) {
+        AVCodecParameters* codecpar = ctx->fmt_ctx->streams[ctx->audio_stream_idx]->codecpar;
+        need_audio_extradata =
+            codecpar->codec_id == AV_CODEC_ID_AAC &&
+            (codecpar->extradata == nullptr || codecpar->extradata_size == 0);
+    }
+
+    if (need_video_extradata || need_audio_extradata) {
+        AVPacket* pkt = av_packet_alloc();
+        int scan_count = 0;
+        const int max_scan_packets = 200;
+        while ((need_video_extradata || need_audio_extradata) &&
+               av_read_frame(ctx->fmt_ctx, pkt) >= 0 &&
+               scan_count < max_scan_packets) {
+            if (need_video_extradata && pkt->stream_index == ctx->video_stream_idx) {
+                const uint8_t* sps = nullptr;
+                const uint8_t* pps = nullptr;
+                int sps_size = 0;
+                int pps_size = 0;
+                if (find_h264_sps_pps(pkt->data, pkt->size, &sps, &sps_size, &pps, &pps_size)) {
+                    video_extradata = build_h264_extradata(sps, sps_size, pps, pps_size,
+                                                           &video_extradata_size);
+                    if (video_extradata) {
+                        LOGI("Video extradata built from bitstream: %d bytes", video_extradata_size);
+                        need_video_extradata = false;
+                    }
+                }
+            } else if (need_audio_extradata && pkt->stream_index == ctx->audio_stream_idx) {
+                if (build_aac_extradata_from_adts(pkt->data, pkt->size,
+                                                  &audio_extradata, &audio_extradata_size)) {
+                    LOGI("Audio extradata built from ADTS: %d bytes", audio_extradata_size);
+                    need_audio_extradata = false;
+                }
+            }
+            av_packet_unref(pkt);
+            scan_count++;
+        }
+        av_packet_free(&pkt);
+    }
 
     // TrackFormat 클래스 참조
     jclass trackFormatClass = env->FindClass("com/yohan/yoplayersdk/demuxer/TrackFormat");
@@ -304,15 +504,26 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
         AVStream* stream = ctx->fmt_ctx->streams[ctx->video_stream_idx];
         AVCodecParameters* codecpar = stream->codecpar;
 
+        LOGI("Video track: codec_id=%d, width=%d, height=%d, extradata_size=%d",
+             codecpar->codec_id, codecpar->width, codecpar->height, codecpar->extradata_size);
+
         const char* mime = codec_id_to_mime(codecpar->codec_id, TRACK_TYPE_VIDEO);
         jstring mimeStr = env->NewStringUTF(mime);
 
         // extradata (SPS/PPS 등)
         jbyteArray extraData = nullptr;
-        if (codecpar->extradata && codecpar->extradata_size > 0) {
-            extraData = env->NewByteArray(codecpar->extradata_size);
-            env->SetByteArrayRegion(extraData, 0, codecpar->extradata_size,
-                                    (jbyte*)codecpar->extradata);
+        const uint8_t* video_extra_ptr = codecpar->extradata;
+        int video_extra_size = codecpar->extradata_size;
+        if (video_extra_size <= 0 && video_extradata) {
+            video_extra_ptr = video_extradata;
+            video_extra_size = video_extradata_size;
+        }
+        if (video_extra_ptr && video_extra_size > 0) {
+            extraData = env->NewByteArray(video_extra_size);
+            env->SetByteArrayRegion(extraData, 0, video_extra_size, (jbyte*)video_extra_ptr);
+            LOGI("Video extradata found: %d bytes", video_extra_size);
+        } else {
+            LOGI("Video extradata not found (will be in-band)");
         }
 
         jobject trackFormat = env->NewObject(
@@ -337,15 +548,27 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
         AVStream* stream = ctx->fmt_ctx->streams[ctx->audio_stream_idx];
         AVCodecParameters* codecpar = stream->codecpar;
 
+        LOGI("Audio track: codec_id=%d, sample_rate=%d, channels=%d, extradata_size=%d",
+             codecpar->codec_id, codecpar->sample_rate, codecpar->ch_layout.nb_channels,
+             codecpar->extradata_size);
+
         const char* mime = codec_id_to_mime(codecpar->codec_id, TRACK_TYPE_AUDIO);
         jstring mimeStr = env->NewStringUTF(mime);
 
         // extradata (AudioSpecificConfig 등)
         jbyteArray extraData = nullptr;
-        if (codecpar->extradata && codecpar->extradata_size > 0) {
-            extraData = env->NewByteArray(codecpar->extradata_size);
-            env->SetByteArrayRegion(extraData, 0, codecpar->extradata_size,
-                                    (jbyte*)codecpar->extradata);
+        const uint8_t* audio_extra_ptr = codecpar->extradata;
+        int audio_extra_size = codecpar->extradata_size;
+        if (audio_extra_size <= 0 && audio_extradata) {
+            audio_extra_ptr = audio_extradata;
+            audio_extra_size = audio_extradata_size;
+        }
+        if (audio_extra_ptr && audio_extra_size > 0) {
+            extraData = env->NewByteArray(audio_extra_size);
+            env->SetByteArrayRegion(extraData, 0, audio_extra_size, (jbyte*)audio_extra_ptr);
+            LOGI("Audio extradata found: %d bytes", audio_extra_size);
+        } else {
+            LOGI("Audio extradata not found");
         }
 
         jobject trackFormat = env->NewObject(
@@ -366,6 +589,13 @@ DEMUXER_FUNC(jobjectArray, nativeProbeSegment, jlong context, jbyteArray data) {
     }
 
     ctx->initialized = true;
+
+    if (video_extradata) {
+        av_free(video_extradata);
+    }
+    if (audio_extradata) {
+        av_free(audio_extradata);
+    }
 
     // 바이트 배열 릴리즈 (JNI_ABORT: 변경 없이 해제)
     env->ReleaseByteArrayElements(data, data_ptr, JNI_ABORT);
@@ -465,6 +695,7 @@ DEMUXER_FUNC(jobjectArray, nativeDemuxSegment, jlong context, jbyteArray data) {
     int sample_count = 0;
 
     AVPacket* pkt = av_packet_alloc();
+    bool sps_pps_logged = false;
 
     while (av_read_frame(ctx->fmt_ctx, pkt) >= 0 && sample_count < MAX_SAMPLES) {
         int stream_idx = pkt->stream_index;
@@ -477,6 +708,21 @@ DEMUXER_FUNC(jobjectArray, nativeDemuxSegment, jlong context, jbyteArray data) {
 
         AVStream* stream = ctx->fmt_ctx->streams[stream_idx];
         int track_type = (stream_idx == ctx->video_stream_idx) ? TRACK_TYPE_VIDEO : TRACK_TYPE_AUDIO;
+
+        // 첫 번째 비디오 키프레임에서 SPS/PPS 확인 (디버깅용)
+        if (!sps_pps_logged && track_type == TRACK_TYPE_VIDEO && (pkt->flags & AV_PKT_FLAG_KEY)) {
+            const uint8_t* sps = nullptr;
+            const uint8_t* pps = nullptr;
+            int sps_size = 0, pps_size = 0;
+
+            if (find_h264_sps_pps(pkt->data, pkt->size, &sps, &sps_size, &pps, &pps_size)) {
+                LOGI("First video keyframe: size=%d, has SPS(%d bytes), has PPS(%d bytes)",
+                     pkt->size, sps_size, pps_size);
+            } else {
+                LOGI("First video keyframe: size=%d, SPS/PPS not found in packet", pkt->size);
+            }
+            sps_pps_logged = true;
+        }
 
         // PTS를 마이크로초로 변환
         int64_t time_us = 0;

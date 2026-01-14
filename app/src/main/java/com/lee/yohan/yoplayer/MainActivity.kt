@@ -1,13 +1,19 @@
 package com.lee.yohan.yoplayer
 
 import android.os.Bundle
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -24,10 +30,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.lee.yohan.yoplayer.ui.theme.YoPlayerTheme
 import com.lee.yohan.yoplayer.viewmodel.M3u8DownloadUiState
@@ -70,6 +79,8 @@ fun YoPlayerTestScreen(
         uiState = uiState,
         onPlay = viewModel::play,
         onStop = viewModel::stop,
+        onSurfaceCreated = { surface -> viewModel.setSurface(surface) },
+        onSurfaceDestroyed = { viewModel.setSurface(null) },
         modifier = modifier
     )
 }
@@ -79,6 +90,8 @@ private fun YoPlayerContent(
     uiState: M3u8DownloadUiState,
     onPlay: () -> Unit,
     onStop: () -> Unit,
+    onSurfaceCreated: (Surface) -> Unit,
+    onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -92,6 +105,41 @@ private fun YoPlayerContent(
             text = "YoPlayer Test",
             style = MaterialTheme.typography.headlineMedium
         )
+
+        // Video Surface
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
+        ) {
+            AndroidView(
+                factory = { context ->
+                    SurfaceView(context).apply {
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(holder: SurfaceHolder) {
+                                onSurfaceCreated(holder.surface)
+                            }
+
+                            override fun surfaceChanged(
+                                holder: SurfaceHolder,
+                                format: Int,
+                                width: Int,
+                                height: Int
+                            ) {
+                                // 크기 변경 시 처리
+                            }
+
+                            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                                onSurfaceDestroyed()
+                            }
+                        })
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -154,7 +202,9 @@ private fun YoPlayerContentPreview_Ready() {
         YoPlayerContent(
             uiState = M3u8DownloadUiState(),
             onPlay = {},
-            onStop = {}
+            onStop = {},
+            onSurfaceCreated = {},
+            onSurfaceDestroyed = {}
         )
     }
 }
@@ -173,7 +223,9 @@ private fun YoPlayerContentPreview_Playing() {
                 )
             ),
             onPlay = {},
-            onStop = {}
+            onStop = {},
+            onSurfaceCreated = {},
+            onSurfaceDestroyed = {}
         )
     }
 }
@@ -193,7 +245,9 @@ private fun YoPlayerContentPreview_Error() {
                 )
             ),
             onPlay = {},
-            onStop = {}
+            onStop = {},
+            onSurfaceCreated = {},
+            onSurfaceDestroyed = {}
         )
     }
 }
