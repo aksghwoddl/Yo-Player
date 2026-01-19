@@ -39,7 +39,6 @@ internal class CustomMediaSource(
         .build()
 
     private var mediaPeriod: CustomMediaPeriod? = null
-    private var nextSegmentStartUs = 0L
 
     override fun getMediaItem(): MediaItem = mediaItem
 
@@ -95,7 +94,6 @@ internal class CustomMediaSource(
     }
 
     private fun startDownload() {
-        nextSegmentStartUs = 0L
         m3u8Downloader.download(url, downloadListener)
     }
 
@@ -113,32 +111,31 @@ internal class CustomMediaSource(
             totalSegments: Int
         ) {
             val period = mediaPeriod ?: return
-            if (period.isLoading().not()) return
+            if (period.isLoading.not()) return
             Log.d(
                 TAG,
                 "Segment downloaded: ${currentIndex + 1}/$totalSegments, size=${data.size} bytes"
             )
 
-            if (period.getTrackGroups().length == 0) {
+            if (segment.hasDiscontinuity) {
+                tsDemuxer.resetForDiscontinuity()
+            }
+
+            if (period.trackGroups.isEmpty) {
                 val tracks = tsDemuxer.probeSegment(data)
                 logTracks(tracks)
                 setTracks(tracks)
             }
 
-            val segmentStartUs = nextSegmentStartUs
-            var videoEndUs = segmentStartUs
             var videoCount = 0
             var audioCount = 0
             var keyFrameCount = 0
 
-            tsDemuxer.demuxSegmentStreaming(data, segmentStartUs) { sample ->
+            tsDemuxer.demuxSegmentStreaming(data) { sample ->
                 if (sample.isVideo) {
                     videoCount++
                     if (sample.isKeyFrame) {
                         keyFrameCount++
-                    }
-                    if (sample.timeUs > videoEndUs) {
-                        videoEndUs = sample.timeUs
                     }
                 } else if (sample.isAudio) {
                     audioCount++
@@ -147,7 +144,6 @@ internal class CustomMediaSource(
             }
 
             logSamples(videoCount, audioCount, keyFrameCount, currentIndex)
-            nextSegmentStartUs = videoEndUs + 1000L
         }
 
         override fun onProgressUpdate(
@@ -186,6 +182,10 @@ internal class CustomMediaSource(
     }
 
     private fun queueSampleWithBackpressure(sample: DemuxedSample) {
+        if (sample.timeUs == C.TIME_UNSET) {
+            Log.w(TAG, "Drop sample with TIME_UNSET: trackType=${sample.trackType}")
+            return
+        }
         val videoNeed = if (sample.isVideo) 1 else 0
         val audioNeed = if (sample.isAudio) 1 else 0
 
@@ -216,7 +216,7 @@ internal class CustomMediaSource(
         Log.d(
             TAG,
             "Segment[$segmentIndex] demuxed: ${(videoCount + audioCount)} samples " +
-                    "(video=$videoCount, audio=$audioCount, keyframes=$keyFrames)"
+                "(video=$videoCount, audio=$audioCount, keyframes=$keyFrames)"
         )
     }
 
