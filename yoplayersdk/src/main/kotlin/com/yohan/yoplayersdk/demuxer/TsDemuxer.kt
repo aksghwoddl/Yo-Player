@@ -1,12 +1,6 @@
 package com.yohan.yoplayersdk.demuxer
 
-import com.yohan.yoplayersdk.m3u8.DownloadedSegment
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.concurrent.atomic.AtomicBoolean
+import androidx.media3.common.C
 
 /**
  * MPEG-TS 세그먼트 디먹서
@@ -15,9 +9,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TsDemuxer {
 
     private val ffmpegDemuxer = FfmpegDemuxer()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val isCancelled = AtomicBoolean(false)
-    private var isInitialized = false
+
+    // AAC 프레임 duration (1024 samples per frame)
+    // 48kHz: 21333us, 44.1kHz: 23220us - 일반적인 값 사용
+    private var aacFrameDurationUs = 21333L
+    private var nextAudioTimeUs = 0L  // 전역 오디오 타임스탬프 추적
+    private var lastAudioTimeUs = C.TIME_UNSET
 
     /**
      * FFmpeg 버전 정보
@@ -27,13 +24,9 @@ class TsDemuxer {
 
     /**
      * 디먹서 초기화
-     * @return 초기화 성공 여부
-     * @throws DemuxerException 초기화 실패 시
      */
     fun initialize() {
-        if (isInitialized) return
         ffmpegDemuxer.initialize()
-        isInitialized = true
     }
 
     /**
@@ -43,171 +36,132 @@ class TsDemuxer {
      */
     fun probeSegment(data: ByteArray): List<TrackFormat> {
         ensureInitialized()
-        return ffmpegDemuxer.probeSegment(data)
+        val tracks = ffmpegDemuxer.probeSegment(data)
+
+        // 오디오 트랙의 샘플레이트로 AAC frame duration 계산
+        tracks.find { it.isAudio }?.let { audioTrack ->
+            if (audioTrack.sampleRate > 0) {
+                // AAC: 1024 samples per frame
+                aacFrameDurationUs = (1024L * 1_000_000L) / audioTrack.sampleRate
+            }
+        }
+
+        // 타임스탬프 리셋
+        nextAudioTimeUs = 0L
+        lastAudioTimeUs = C.TIME_UNSET
+
+        return tracks
     }
 
     /**
      * 단일 세그먼트 디먹싱 (동기)
+     * PTS를 segmentStartUs 기준으로 정규화하여 반환
+     *
      * @param data TS 세그먼트 바이트 배열
-     * @return 추출된 샘플 목록
+     * @param segmentStartUs 세그먼트 시작 시간 (마이크로초)
+     * @return 정규화된 타임스탬프를 가진 샘플 목록
      */
-    fun demuxSegmentSync(data: ByteArray): List<DemuxedSample> {
+    fun demuxSegmentSync(data: ByteArray, segmentStartUs: Long): List<DemuxedSample> {
         ensureInitialized()
-        return ffmpegDemuxer.demuxSegment(data)
+        val rawSamples = ffmpegDemuxer.demuxSegment(data)
+        val (normalizedAudioSamples, normalizedVideoSamples) =
+            normalizeSamples(rawSamples, segmentStartUs)
+
+        return normalizedAudioSamples + normalizedVideoSamples
     }
 
     /**
-     * 다운로드된 세그먼트 목록 디먹싱 (비동기)
+     * 단일 세그먼트를 스트리밍 방식으로 디먹싱하여 즉시 콜백 전달
      *
-     * @param segments 다운로드된 세그먼트 목록
-     * @param listener 디먹싱 리스너
+     * @param data TS 세그먼트 바이트 배열
+     * @param segmentStartUs 세그먼트 시작 시간 (마이크로초)
+     * @param onSample 정규화된 샘플 콜백
      */
-    fun demuxSegments(
-        segments: List<DownloadedSegment>,
-        listener: DemuxerListener
+    fun demuxSegmentStreaming(
+        data: ByteArray,
+        segmentStartUs: Long,
+        onSample: (DemuxedSample) -> Unit
     ) {
-        isCancelled.set(false)
-
-        scope.launch {
-            try {
-                ensureInitialized()
-
-                if (segments.isEmpty()) {
-                    listener.onError(DemuxerException("No segments to demux"))
-                    return@launch
-                }
-
-                // 첫 번째 세그먼트에서 트랙 정보 분석
-                val tracks = ffmpegDemuxer.probeSegment(segments.first().data)
-
-                withContext(Dispatchers.Main) {
-                    listener.onTracksFound(tracks)
-                }
-
-                var totalSamples = 0
-
-                // 각 세그먼트 디먹싱
-                segments.forEachIndexed { index, segment ->
-                    if (isCancelled.get()) {
-                        return@launch
-                    }
-
-                    try {
-                        val samples = ffmpegDemuxer.demuxSegment(segment.data)
-
-                        // 각 샘플을 콜백으로 전달
-                        samples.forEach { sample ->
-                            if (isCancelled.get()) return@forEach
-
-                            withContext(Dispatchers.Main) {
-                                listener.onSampleExtracted(sample)
-                            }
-                        }
-
-                        totalSamples += samples.size
-
-                        withContext(Dispatchers.Main) {
-                            listener.onSegmentCompleted(index, samples.size)
-                        }
-
-                    } catch (e: Exception) {
-                        withContext(Dispatchers.Main) {
-                            listener.onError(e, index)
-                        }
-                    }
-                }
-
-                if (isCancelled.get().not()) {
-                    withContext(Dispatchers.Main) {
-                        listener.onDemuxingCompleted(segments.size, totalSamples)
-                    }
-                }
-
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    listener.onError(e)
-                }
-            }
-        }
-    }
-
-    /**
-     * 다운로드된 세그먼트 목록을 디먹싱하고 모든 샘플 반환 (동기)
-     *
-     * @param segments 다운로드된 세그먼트 목록
-     * @return 디먹싱 결과 (트랙 정보 + 모든 샘플)
-     */
-    fun demuxSegmentsSync(segments: List<DownloadedSegment>): DemuxResult {
         ensureInitialized()
+        val rawSamples = ffmpegDemuxer.demuxSegment(data)
+        val (normalizedAudioSamples, normalizedVideoSamples) =
+            normalizeSamples(rawSamples, segmentStartUs)
 
-        if (segments.isEmpty()) {
-            return DemuxResult(emptyList(), emptyList())
-        }
-
-        // 첫 번째 세그먼트에서 트랙 정보 분석
-        val tracks = ffmpegDemuxer.probeSegment(segments.first().data)
-
-        // 모든 세그먼트 디먹싱
-        val allSamples = buildList {
-            segments.forEach { segment ->
-                val samples = ffmpegDemuxer.demuxSegment(segment.data)
-                addAll(samples)
-            }
-        }
-
-        return DemuxResult(tracks, allSamples)
-    }
-
-    /**
-     * 진행 중인 디먹싱 취소
-     */
-    fun cancel() {
-        isCancelled.set(true)
+        normalizedAudioSamples.forEach(onSample)
+        normalizedVideoSamples.forEach(onSample)
     }
 
     /**
      * 리소스 해제
      */
     fun release() {
-        cancel()
         ffmpegDemuxer.release()
-        isInitialized = false
+        nextAudioTimeUs = 0L
+        lastAudioTimeUs = C.TIME_UNSET
     }
 
     private fun ensureInitialized() {
-        if (isInitialized.not()) {
-            initialize()
+        initialize()
+    }
+
+    private fun normalizeSamples(
+        rawSamples: List<DemuxedSample>,
+        segmentStartUs: Long
+    ): Pair<List<DemuxedSample>, List<DemuxedSample>> {
+        val audioSamples = rawSamples.filter { it.isAudio }
+        val videoSamples = rawSamples.filter { it.isVideo }
+
+        // 각 트랙의 basePts (세그먼트 내 첫 PTS)
+        val audioBasePts = audioSamples.map { it.timeUs }.filter { it > 0L }.minOrNull() ?: 0L
+        val videoBasePts = videoSamples.minOfOrNull { it.timeUs } ?: 0L
+
+        // Video: 자체 basePts를 빼서 0부터 시작, segmentStartUs 더함
+        val normalizedVideoSamples = videoSamples.map { sample ->
+            val relativePts = (sample.timeUs - videoBasePts).coerceAtLeast(0L)
+            sample.copy(timeUs = segmentStartUs + relativePts)
+        }
+
+        // Audio: FFmpeg PTS를 우선 사용하고, 누락/역행 시 프레임 duration 기반으로 보정
+        val normalizedAudioSamples = normalizeAudioSamples(
+            samples = audioSamples,
+            audioBasePts = audioBasePts,
+            segmentStartUs = segmentStartUs
+        )
+
+        return normalizedAudioSamples to normalizedVideoSamples
+    }
+
+    private fun normalizeAudioSamples(
+        samples: List<DemuxedSample>,
+        audioBasePts: Long,
+        segmentStartUs: Long
+    ): List<DemuxedSample> {
+        return samples.map { sample ->
+            val relativePts =
+                if (sample.timeUs > 0L) (sample.timeUs - audioBasePts).coerceAtLeast(0L) else C.TIME_UNSET
+            val baseTimeUs =
+                if (relativePts != C.TIME_UNSET) segmentStartUs + relativePts else C.TIME_UNSET
+
+            val targetTimeUs = if (baseTimeUs != C.TIME_UNSET) {
+                baseTimeUs
+            } else {
+                if (nextAudioTimeUs == 0L && lastAudioTimeUs == C.TIME_UNSET) {
+                    segmentStartUs
+                } else {
+                    nextAudioTimeUs
+                }
+            }
+
+            val monotonicTimeUs =
+                if (lastAudioTimeUs != C.TIME_UNSET && targetTimeUs <= lastAudioTimeUs) {
+                    lastAudioTimeUs + aacFrameDurationUs
+                } else {
+                    targetTimeUs
+                }
+
+            lastAudioTimeUs = monotonicTimeUs
+            nextAudioTimeUs = monotonicTimeUs + aacFrameDurationUs
+            sample.copy(timeUs = monotonicTimeUs)
         }
     }
 }
-
-/**
- * 디먹싱 결과
- *
- * @property tracks 트랙 포맷 목록
- * @property samples 모든 샘플 목록
- */
-data class DemuxResult(
-    val tracks: List<TrackFormat>,
-    val samples: List<DemuxedSample>
-) {
-    val videoSamples: List<DemuxedSample>
-        get() = samples.filter { it.isVideo }
-
-    val audioSamples: List<DemuxedSample>
-        get() = samples.filter { it.isAudio }
-
-    val videoTrack: TrackFormat?
-        get() = tracks.find { it.isVideo }
-
-    val audioTrack: TrackFormat?
-        get() = tracks.find { it.isAudio }
-}
-
-/**
- * 디먹서 예외
- */
-class DemuxerException(
-    message: String,
-    cause: Throwable? = null
-) : Exception(message, cause)

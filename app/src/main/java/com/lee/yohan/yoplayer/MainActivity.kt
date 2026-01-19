@@ -79,6 +79,8 @@ fun YoPlayerTestScreen(
         uiState = uiState,
         onPlay = viewModel::play,
         onStop = viewModel::stop,
+        onPause = viewModel::pause,
+        onResume = viewModel::resume,
         onSurfaceCreated = { surface -> viewModel.setSurface(surface) },
         onSurfaceDestroyed = { viewModel.setSurface(null) },
         modifier = modifier
@@ -90,6 +92,8 @@ private fun YoPlayerContent(
     uiState: M3u8DownloadUiState,
     onPlay: () -> Unit,
     onStop: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
     onSurfaceCreated: (Surface) -> Unit,
     onSurfaceDestroyed: () -> Unit,
     modifier: Modifier = Modifier
@@ -153,6 +157,13 @@ private fun YoPlayerContent(
             }
 
             OutlinedButton(
+                onClick = { if (uiState.isPaused) onResume() else onPause() },
+                enabled = uiState.isDownloading
+            ) {
+                Text(if (uiState.isPaused) "Resume" else "Pause")
+            }
+
+            OutlinedButton(
                 onClick = onStop,
                 enabled = uiState.isDownloading
             ) {
@@ -167,6 +178,7 @@ private fun YoPlayerContent(
                 containerColor = when {
                     uiState.isError -> MaterialTheme.colorScheme.errorContainer
                     uiState.isCompleted -> MaterialTheme.colorScheme.primaryContainer
+                    uiState.isPaused -> MaterialTheme.colorScheme.secondaryContainer
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 }
             )
@@ -203,6 +215,8 @@ private fun YoPlayerContentPreview_Ready() {
             uiState = M3u8DownloadUiState(),
             onPlay = {},
             onStop = {},
+            onPause = {},
+            onResume = {},
             onSurfaceCreated = {},
             onSurfaceDestroyed = {}
         )
@@ -224,6 +238,32 @@ private fun YoPlayerContentPreview_Playing() {
             ),
             onPlay = {},
             onStop = {},
+            onPause = {},
+            onResume = {},
+            onSurfaceCreated = {},
+            onSurfaceDestroyed = {}
+        )
+    }
+}
+
+@Preview(showBackground = true, name = "Paused State")
+@Composable
+private fun YoPlayerContentPreview_Paused() {
+    YoPlayerTheme {
+        YoPlayerContent(
+            uiState = M3u8DownloadUiState(
+                isDownloading = true,
+                isPaused = true,
+                statusMessage = "Paused",
+                logs = listOf(
+                    "=== Starting YoPlayer ===",
+                    "YoPlayer paused"
+                )
+            ),
+            onPlay = {},
+            onStop = {},
+            onPause = {},
+            onResume = {},
             onSurfaceCreated = {},
             onSurfaceDestroyed = {}
         )
@@ -246,6 +286,8 @@ private fun YoPlayerContentPreview_Error() {
             ),
             onPlay = {},
             onStop = {},
+            onPause = {},
+            onResume = {},
             onSurfaceCreated = {},
             onSurfaceDestroyed = {}
         )

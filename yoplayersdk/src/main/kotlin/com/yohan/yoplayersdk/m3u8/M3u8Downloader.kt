@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -12,8 +13,8 @@ import okhttp3.Request
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.coroutines.coroutineContext
 
 /**
  * M3U8 HLS 스트림 다운로더
@@ -28,7 +29,6 @@ class M3u8Downloader(
 ) {
     private val supervisorJob = SupervisorJob()
     private val scope = CoroutineScope(Dispatchers.IO + supervisorJob)
-    private val isCancelled = AtomicBoolean(false)
     private var currentJob: Job? = null
     private val downloadedSegments: List<DownloadedSegment> = mutableListOf()
 
@@ -65,7 +65,6 @@ class M3u8Downloader(
         m3u8Url: String,
         listener: M3u8DownloadListener? = null,
     ) {
-        isCancelled.set(false)
         currentJob?.cancel()
         currentJob = scope.launch {
             val startTime = System.currentTimeMillis()
@@ -104,11 +103,6 @@ class M3u8Downloader(
                     totalBytesDownloaded,
                 )
 
-                if (isCancelled.get()) {
-                    listener?.onDownloadCancelled()
-                    return@launch
-                }
-
                 val elapsedTime = System.currentTimeMillis() - startTime
                 listener?.onDownloadCompleted(
                     downloadedSegments,
@@ -136,7 +130,7 @@ class M3u8Downloader(
         val totalSegments = segments.size
 
         segments.forEachIndexed { index, segment ->
-            if (isCancelled.get()) return@forEachIndexed
+            coroutineContext.ensureActive()
 
             try {
                 val data = downloadSegmentAndToByteArray(segment)
@@ -186,9 +180,7 @@ class M3u8Downloader(
                 var bytesRead: Int
 
                 while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    if (isCancelled.get()) {
-                        throw CancellationException("다운로드가 취소되었습니다.")
-                    }
+                    coroutineContext.ensureActive()
                     outputStream.write(buffer, 0, bytesRead)
                 }
             }
@@ -217,7 +209,6 @@ class M3u8Downloader(
      * 다운로드를 취소합니다.
      */
     fun cancel() {
-        isCancelled.set(true)
         currentJob?.cancel()
     }
 
