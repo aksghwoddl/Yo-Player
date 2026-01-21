@@ -1,16 +1,23 @@
 package com.yohan.yoplayersdk
 
-import com.yohan.yoplayersdk.demuxer.TsDemuxer
-import com.yohan.yoplayersdk.m3u8.M3u8Downloader
+import android.content.Context
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import com.yohan.yoplayersdk.player.YoPlayer
 import com.yohan.yoplayersdk.player.YoPlayerImpl
 
 object YoPlayerSdk {
 
-    fun buildPlayer(): YoPlayer {
+    /**
+     * YoPlayer 인스턴스 생성
+     *
+     * @param context Android Context (Application 또는 Activity)
+     * @return YoPlayer 인스턴스
+     */
+    @OptIn(UnstableApi::class)
+    fun buildPlayer(context: Context): YoPlayer {
         return YoPlayerImpl(
-            m3u8Downloader = M3u8Downloader(),
-            tsDemuxer = TsDemuxer()
+            context = context.applicationContext
         )
     }
 }

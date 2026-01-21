@@ -1,6 +1,7 @@
 package com.lee.yohan.yoplayer.viewmodel
 
 import android.util.Log
+import android.view.Surface
 import androidx.lifecycle.ViewModel
 import com.yohan.yoplayersdk.player.YoPlayer
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,6 +17,7 @@ private const val TAG = "MainViewModel"
 
 data class M3u8DownloadUiState(
     val isDownloading: Boolean = false,
+    val isPaused: Boolean = false,
     val progress: Float = 0f,
     val downloadedSegments: Int = 0,
     val totalSegments: Int = 0,
@@ -36,6 +38,10 @@ class MainViewModel @Inject constructor(
     private fun addLog(message: String) {
         Log.d(TAG, message)
         _uiState.update { it.copy(logs = it.logs + message) }
+    }
+
+    fun setSurface(surface: Surface?) {
+        yoPlayer.setSurface(surface)
     }
 
     fun play() {
@@ -59,10 +65,33 @@ class MainViewModel @Inject constructor(
         _uiState.update {
             it.copy(
                 isDownloading = false,
+                isPaused = false,
                 statusMessage = "Stopped"
             )
         }
         addLog("YoPlayer stopped")
+    }
+
+    fun pause() {
+        yoPlayer.pause()
+        _uiState.update {
+            it.copy(
+                isPaused = true,
+                statusMessage = "Paused"
+            )
+        }
+        addLog("YoPlayer paused")
+    }
+
+    fun resume() {
+        yoPlayer.resume()
+        _uiState.update {
+            it.copy(
+                isPaused = false,
+                statusMessage = "Playing..."
+            )
+        }
+        addLog("YoPlayer resumed")
     }
 
     override fun onCleared() {

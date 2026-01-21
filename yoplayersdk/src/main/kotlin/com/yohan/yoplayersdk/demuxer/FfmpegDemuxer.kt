@@ -39,7 +39,7 @@ internal class FfmpegDemuxer {
         if (isLibraryLoaded.not()) {
             loadLibrary()
         }
-        if (!isInitialized) {
+        if (isInitialized.not()) {
             nativeContext = nativeInit()
         }
     }
@@ -50,7 +50,7 @@ internal class FfmpegDemuxer {
      * @return 트랙 포맷 목록
      */
     fun probeSegment(data: ByteArray): List<TrackFormat> {
-        if (!isInitialized) {
+        if (isInitialized.not()) {
             throw IllegalStateException("Demuxer not initialized")
         }
         val tracks = nativeProbeSegment(nativeContext, data)
@@ -63,7 +63,7 @@ internal class FfmpegDemuxer {
      * @return 추출된 샘플 목록
      */
     fun demuxSegment(data: ByteArray): List<DemuxedSample> {
-        if (!isInitialized) {
+        if (isInitialized.not()) {
             throw IllegalStateException("Demuxer not initialized")
         }
         val samples = nativeDemuxSegment(nativeContext, data)
