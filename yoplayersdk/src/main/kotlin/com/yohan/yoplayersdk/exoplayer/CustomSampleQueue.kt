@@ -17,7 +17,8 @@ internal class CustomSampleQueue(
     }
 
     private val sampleQueue = ConcurrentLinkedQueue<DemuxedSample>()
-    private val maxSamples = if (trackType == 2) MAX_VIDEO_SAMPLES else MAX_AUDIO_SAMPLES
+    private val maxSamples =
+        if (trackType == C.TRACK_TYPE_VIDEO) MAX_VIDEO_SAMPLES else MAX_AUDIO_SAMPLES
 
     @Volatile
     private var isEndOfStream = false
@@ -29,13 +30,14 @@ internal class CustomSampleQueue(
      * 큐에 샘플 추가
      */
     fun queueSample(sample: DemuxedSample): Boolean {
-        if (sample.trackType == trackType) {
-            if (sampleQueue.size >= maxSamples) {
-                return false
-            }
-            sampleQueue.offer(sample)
-            lastTimeUs = sample.timeUs
+        if (sample.trackType != trackType) {
+            return true
         }
+        if (sampleQueue.size >= maxSamples) {
+            return false
+        }
+        sampleQueue.offer(sample)
+        lastTimeUs = sample.timeUs
         return true
     }
 
@@ -48,15 +50,10 @@ internal class CustomSampleQueue(
 
     /**
      * 샘플 읽기
-     *
-     * @return C.RESULT_BUFFER_READ: 버퍼 읽기 성공
-     *         C.RESULT_NOTHING_READ: 읽을 샘플 없음
      */
     @OptIn(UnstableApi::class)
     fun read(buffer: DecoderInputBuffer, omitSampleData: Boolean, peek: Boolean): Int {
-        val sample = sampleQueue.peek()
-
-        if (sample == null) {
+        val sample = sampleQueue.peek() ?: run {
             if (isEndOfStream) {
                 buffer.setFlags(C.BUFFER_FLAG_END_OF_STREAM)
                 return C.RESULT_BUFFER_READ
@@ -66,12 +63,7 @@ internal class CustomSampleQueue(
 
         buffer.timeUs = sample.timeUs
 
-        // 플래그 설정
-        var flags = 0
-        if (sample.isKeyFrame) {
-            flags = flags or C.BUFFER_FLAG_KEY_FRAME
-        }
-        buffer.setFlags(flags)
+        buffer.setFlags(if (sample.isKeyFrame) C.BUFFER_FLAG_KEY_FRAME else 0)
 
         if (omitSampleData.not()) {
             // 데이터 복사
@@ -114,11 +106,7 @@ internal class CustomSampleQueue(
      * 버퍼링된 가장 마지막 샘플의 타임스탬프 반환
      */
     fun getBufferedPositionUs(): Long {
-        return if (isEndOfStream && sampleQueue.isEmpty()) {
-            C.TIME_END_OF_SOURCE
-        } else {
-            lastTimeUs
-        }
+        return if (isEndOfStream && sampleQueue.isEmpty()) C.TIME_END_OF_SOURCE else lastTimeUs
     }
 
     /**
